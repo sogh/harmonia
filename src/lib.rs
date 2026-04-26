@@ -15,13 +15,21 @@
 //!   spelling on top of a pitch class.
 //! - [`spell_heptatonic`](spelling::spell_heptatonic) — assigns natural
 //!   letters A–G across a seven-note scale so each appears exactly once.
+//!
+//! ## Catalogue
+//!
+//! - [`ScaleKind`] — the 16 scales from `theory.js` (modes, pentatonics,
+//!   harmonic/melodic minor, symmetric scales).
+//! - [`Scale`] — a [`ScaleKind`] anchored at a root [`PitchClass`].
 
 pub mod interval;
 pub mod note;
 pub mod pitch;
+pub mod scale;
 pub mod spelling;
 
 pub use interval::Interval;
 pub use note::{Accidental, Letter, Note};
 pub use pitch::PitchClass;
+pub use scale::{Scale, ScaleGroup, ScaleKind};
 pub use spelling::spell_heptatonic;
