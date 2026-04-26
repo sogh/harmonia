@@ -8,8 +8,10 @@
 //! `secondary_of` for tonicization (`V7/ii`).
 
 use std::fmt;
+use std::str::FromStr;
 
 use crate::chord::ChordQuality;
+use crate::parse::ParseError;
 
 /// A chromatic alteration applied to a scale-degree numeral.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -177,6 +179,138 @@ impl fmt::Display for RomanNumeral {
     }
 }
 
+/// Roman digits in descending length order, so a longest-prefix match picks
+/// the right value (e.g. `"VII"` beats `"V"`).
+const UPPER_ROMANS: &[(&str, u8)] = &[
+    ("VII", 7),
+    ("VI", 6),
+    ("V", 5),
+    ("IV", 4),
+    ("III", 3),
+    ("II", 2),
+    ("I", 1),
+];
+const LOWER_ROMANS: &[(&str, u8)] = &[
+    ("vii", 7),
+    ("vi", 6),
+    ("v", 5),
+    ("iv", 4),
+    ("iii", 3),
+    ("ii", 2),
+    ("i", 1),
+];
+
+fn parse_roman_digits(s: &str) -> Option<(u8, bool, &str)> {
+    for (digits, degree) in UPPER_ROMANS {
+        if let Some(rest) = s.strip_prefix(*digits) {
+            return Some((*degree, true, rest));
+        }
+    }
+    for (digits, degree) in LOWER_ROMANS {
+        if let Some(rest) = s.strip_prefix(*digits) {
+            return Some((*degree, false, rest));
+        }
+    }
+    None
+}
+
+fn quality_for(uppercase: bool, suffix: &str) -> Option<ChordQuality> {
+    Some(match (uppercase, suffix) {
+        (true, "") => ChordQuality::Major,
+        (false, "") => ChordQuality::Minor,
+        (false, "°") => ChordQuality::Diminished,
+        (true, "+") => ChordQuality::Augmented,
+        (true, "sus2") => ChordQuality::Sus2,
+        (true, "sus4") => ChordQuality::Sus4,
+        (true, "maj7") => ChordQuality::Major7,
+        (true, "7") => ChordQuality::Dominant7,
+        (false, "7") => ChordQuality::Minor7,
+        (false, "M7") => ChordQuality::MinorMajor7,
+        (false, "°7") => ChordQuality::Diminished7,
+        (false, "ø7") => ChordQuality::HalfDiminished7,
+        _ => return None,
+    })
+}
+
+/// Parse a Roman numeral. Inverse of [`RomanNumeral`]'s [`Display`] impl.
+///
+/// Accepts the standard chromatic alterations (`♭`/`♯`, with `b`/`#` as
+/// ASCII alternatives), the seven Roman digits in either case, the
+/// quality suffixes from [`Display`], and `/<target>` for secondary
+/// chords (the target is parsed recursively).
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{ChordQuality, RomanNumeral};
+///
+/// let v7: RomanNumeral = "V7".parse().unwrap();
+/// assert_eq!(v7, RomanNumeral::new(5, ChordQuality::Dominant7));
+///
+/// let flat_three: RomanNumeral = "♭III".parse().unwrap();
+/// assert_eq!(flat_three, RomanNumeral::flat(3, ChordQuality::Major));
+///
+/// let secondary: RomanNumeral = "V7/ii".parse().unwrap();
+/// assert_eq!(
+///     secondary,
+///     RomanNumeral::new(5, ChordQuality::Dominant7)
+///         .secondary_of(RomanNumeral::new(2, ChordQuality::Minor))
+/// );
+///
+/// // Round-trips through Display.
+/// let half: RomanNumeral = "viiø7".parse().unwrap();
+/// assert_eq!(half.to_string(), "viiø7");
+/// ```
+impl FromStr for RomanNumeral {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut rest = s;
+
+        // 1. Optional alteration prefix.
+        let alteration = if let Some(r) = rest.strip_prefix('♭').or_else(|| rest.strip_prefix('b')) {
+            rest = r;
+            Some(Alteration::Flat)
+        } else if let Some(r) = rest.strip_prefix('♯').or_else(|| rest.strip_prefix('#')) {
+            rest = r;
+            Some(Alteration::Sharp)
+        } else {
+            None
+        };
+
+        // 2. Roman digits.
+        let (degree, uppercase, after_digits) = parse_roman_digits(rest).ok_or_else(|| {
+            ParseError::new(format!("expected Roman digit in {s:?}"))
+        })?;
+
+        // 3. Suffix and optional /secondary, splitting at the first '/'.
+        let (suffix, secondary) = match after_digits.find('/') {
+            Some(idx) => {
+                let suf = &after_digits[..idx];
+                let sec_str = &after_digits[idx + 1..];
+                let sec: RomanNumeral = sec_str.parse()?;
+                (suf, Some(Box::new(sec)))
+            }
+            None => (after_digits, None),
+        };
+
+        // 4. Resolve quality from (case, suffix).
+        let quality = quality_for(uppercase, suffix).ok_or_else(|| {
+            let case = if uppercase { "uppercase" } else { "lowercase" };
+            ParseError::new(format!(
+                "no chord quality matches {case} numeral with suffix {suffix:?}"
+            ))
+        })?;
+
+        Ok(Self {
+            alteration,
+            degree,
+            quality,
+            secondary_of: secondary,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +377,137 @@ mod tests {
         assert!(!RomanNumeral::new(2, ChordQuality::Minor).is_uppercase());
         assert!(!RomanNumeral::new(7, ChordQuality::Diminished).is_uppercase());
         assert!(!RomanNumeral::new(7, ChordQuality::HalfDiminished7).is_uppercase());
+    }
+
+    #[test]
+    fn parse_basic_diatonic_triads() {
+        let cases = [
+            ("I", 1, ChordQuality::Major),
+            ("ii", 2, ChordQuality::Minor),
+            ("iii", 3, ChordQuality::Minor),
+            ("IV", 4, ChordQuality::Major),
+            ("V", 5, ChordQuality::Major),
+            ("vi", 6, ChordQuality::Minor),
+            ("vii°", 7, ChordQuality::Diminished),
+        ];
+        for (input, degree, quality) in cases {
+            let parsed: RomanNumeral = input.parse().unwrap();
+            assert_eq!(parsed, RomanNumeral::new(degree, quality), "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn parse_seventh_chords() {
+        assert_eq!(
+            "V7".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::new(5, ChordQuality::Dominant7)
+        );
+        assert_eq!(
+            "ii7".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::new(2, ChordQuality::Minor7)
+        );
+        assert_eq!(
+            "Imaj7".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::new(1, ChordQuality::Major7)
+        );
+        assert_eq!(
+            "viiø7".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::new(7, ChordQuality::HalfDiminished7)
+        );
+    }
+
+    #[test]
+    fn parse_alterations() {
+        assert_eq!(
+            "♭III".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::flat(3, ChordQuality::Major)
+        );
+        // ASCII alternatives.
+        assert_eq!(
+            "bIII".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::flat(3, ChordQuality::Major)
+        );
+        assert_eq!(
+            "♯iv".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::sharp(4, ChordQuality::Minor)
+        );
+        assert_eq!(
+            "#iv".parse::<RomanNumeral>().unwrap(),
+            RomanNumeral::sharp(4, ChordQuality::Minor)
+        );
+    }
+
+    #[test]
+    fn parse_secondary_dominants() {
+        let r: RomanNumeral = "V7/ii".parse().unwrap();
+        assert_eq!(
+            r,
+            RomanNumeral::new(5, ChordQuality::Dominant7)
+                .secondary_of(RomanNumeral::new(2, ChordQuality::Minor))
+        );
+
+        // Targets can themselves carry alteration.
+        let r: RomanNumeral = "V7/♭III".parse().unwrap();
+        assert_eq!(
+            r,
+            RomanNumeral::new(5, ChordQuality::Dominant7)
+                .secondary_of(RomanNumeral::flat(3, ChordQuality::Major))
+        );
+    }
+
+    #[test]
+    fn parse_round_trips_for_every_degree_and_quality() {
+        // Without alteration or secondary.
+        for degree in 1..=7 {
+            for q in ChordQuality::ALL {
+                let original = RomanNumeral::new(degree, *q);
+                let parsed: RomanNumeral = original.to_string().parse().unwrap();
+                assert_eq!(parsed, original, "{degree} {q:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_round_trips_with_alteration() {
+        for degree in 1..=7 {
+            for q in ChordQuality::ALL {
+                for r in [
+                    RomanNumeral::flat(degree, *q),
+                    RomanNumeral::sharp(degree, *q),
+                ] {
+                    let parsed: RomanNumeral = r.to_string().parse().unwrap();
+                    assert_eq!(parsed, r);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parse_round_trips_with_secondary() {
+        // V7/X for every diatonic-triad target.
+        for (target_degree, target_quality) in [
+            (1, ChordQuality::Major),
+            (2, ChordQuality::Minor),
+            (3, ChordQuality::Minor),
+            (4, ChordQuality::Major),
+            (5, ChordQuality::Major),
+            (6, ChordQuality::Minor),
+            (7, ChordQuality::Diminished),
+        ] {
+            let original = RomanNumeral::new(5, ChordQuality::Dominant7)
+                .secondary_of(RomanNumeral::new(target_degree, target_quality));
+            let parsed: RomanNumeral = original.to_string().parse().unwrap();
+            assert_eq!(parsed, original);
+        }
+    }
+
+    #[test]
+    fn parse_rejects_invalid_inputs() {
+        assert!("".parse::<RomanNumeral>().is_err());
+        assert!("Z".parse::<RomanNumeral>().is_err()); // not a roman digit
+        assert!("Vfoo".parse::<RomanNumeral>().is_err()); // unknown suffix
+        assert!("I°".parse::<RomanNumeral>().is_err()); // ° on uppercase has no quality
+        assert!("V7/".parse::<RomanNumeral>().is_err()); // trailing slash, no target
+        assert!("viii".parse::<RomanNumeral>().is_err()); // garbage after vii
     }
 }
