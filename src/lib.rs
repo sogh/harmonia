@@ -28,7 +28,10 @@
 //!
 //! - [`Key`] — a (currently always major) key. Provides diatonic chord
 //!   templates and Roman-numeral labels via [`Key::roman_for`].
+//! - [`detect_key`](analysis::detect_key) — score a chord progression
+//!   against every major key, returning candidates ranked by fit.
 
+pub mod analysis;
 pub mod chord;
 pub mod interval;
 pub mod key;
@@ -37,6 +40,7 @@ pub mod pitch;
 pub mod scale;
 pub mod spelling;
 
+pub use analysis::{detect_key, KeyMatch};
 pub use chord::{Chord, ChordQuality};
 pub use interval::Interval;
 pub use key::{DiatonicChord, Key};
