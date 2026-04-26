@@ -7,11 +7,13 @@ use crate::chord::{Chord, ChordQuality};
 use crate::interval::Interval;
 use crate::key::Key;
 use crate::pitch::PitchClass;
+use crate::roman::RomanNumeral;
 use crate::scale::{Scale, ScaleGroup};
 
 /// One row of [`detect_key`]'s output: a candidate key, the count of input
 /// chords that fit it diatonically, and the total chord count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct KeyMatch {
     pub key: Key,
     /// Number of input chords that have a Roman-numeral role in `key`,
@@ -97,6 +99,7 @@ pub fn detect_key(chords: &[Chord]) -> Vec<KeyMatch> {
 /// for a lead-line gap between two chords, with which side(s) of the
 /// bracket it fits and a human-readable reasoning string.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ScaleSuggestion {
     pub scale: Scale,
     /// True iff a previous chord was supplied **and** every one of its
@@ -228,6 +231,8 @@ fn bracket_reasoning(
 
 /// What kind of relationship a [`ChordSuggestion`] represents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum SuggestionCategory {
     /// In the detected key's diatonic chord set (or a functional equivalent).
     Diatonic,
@@ -277,12 +282,13 @@ impl std::str::FromStr for SuggestionCategory {
 
 /// One suggestion from [`suggest_next_chords`].
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChordSuggestion {
     pub chord: Chord,
-    /// Roman numeral label in the detected key, e.g. `"I"`, `"V7/ii"`,
-    /// `"♭III"`. Empty when no key is detected and the category does not
-    /// supply its own label (chromatic / resolution moves out of key).
-    pub roman: String,
+    /// Roman numeral label, when one is meaningful in the detected key.
+    /// `None` when no key is detected and the category doesn't supply its
+    /// own label (chromatic / resolution moves out of key).
+    pub roman: Option<RomanNumeral>,
     /// Human-readable explanation of why this chord was suggested.
     pub reason: String,
     pub category: SuggestionCategory,
@@ -293,6 +299,7 @@ pub struct ChordSuggestion {
 
 /// Result of [`suggest_next_chords`].
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChordSuggestionResult {
     /// Best-fit major key inferred from the chord history, if any.
     pub key: Option<KeyMatch>,
@@ -342,7 +349,7 @@ impl<'a> Builder<'a> {
     fn add(
         &mut self,
         chord: Chord,
-        roman_override: &str,
+        roman_override: Option<RomanNumeral>,
         reason: String,
         category: SuggestionCategory,
     ) {
@@ -362,25 +369,24 @@ impl<'a> Builder<'a> {
     fn label(
         &self,
         chord: Chord,
-        roman_override: &str,
+        roman_override: Option<RomanNumeral>,
         category: SuggestionCategory,
-    ) -> (String, String) {
+    ) -> (Option<RomanNumeral>, String) {
         let Some(bk) = self.best_key else {
-            return (roman_override.to_string(), String::new());
+            return (roman_override, String::new());
         };
 
         if let Some(r) = bk.key.roman_for(chord) {
-            return (r, format!("diatonic in {}", bk.key));
+            return (Some(r), format!("diatonic in {}", bk.key));
         }
 
         // Non-diatonic. Keep caller-supplied romans only for categories
-        // that own their labelling convention; for the rest, blank is
-        // less misleading than a numeral from a different tonal context.
+        // that own their labelling convention; for the rest, drop the
+        // override since a numeral from a different tonal context would
+        // mislead.
         let roman = match category {
-            SuggestionCategory::Secondary | SuggestionCategory::Borrowed => {
-                roman_override.to_string()
-            }
-            _ => String::new(),
+            SuggestionCategory::Secondary | SuggestionCategory::Borrowed => roman_override,
+            _ => None,
         };
 
         // See whether adding this chord would tilt the detected key.
@@ -493,7 +499,7 @@ fn add_diatonic(b: &mut Builder, bk: KeyMatch) {
         let chord = d.in_key(bk.key);
         b.add(
             chord,
-            d.roman,
+            Some(d.roman.clone()),
             format!("diatonic in {key_label}"),
             SuggestionCategory::Diatonic,
         );
@@ -502,7 +508,7 @@ fn add_diatonic(b: &mut Builder, bk: KeyMatch) {
         let chord = d.in_key(bk.key);
         b.add(
             chord,
-            d.roman,
+            Some(d.roman.clone()),
             format!("diatonic in {key_label}"),
             SuggestionCategory::Diatonic,
         );
@@ -519,13 +525,13 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
         let tonic = p_root + Interval::PERFECT_FOURTH;
         b.add(
             Chord::new(tonic, ChordQuality::Major),
-            "I",
+            Some(RomanNumeral::new(1, ChordQuality::Major)),
             format!("resolves V→I from {prev_label}"),
             SuggestionCategory::Resolution,
         );
         b.add(
             Chord::new(tonic, ChordQuality::Minor),
-            "i",
+            Some(RomanNumeral::new(1, ChordQuality::Minor)),
             format!("resolves V→i from {prev_label}"),
             SuggestionCategory::Resolution,
         );
@@ -536,13 +542,13 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
         let v = p_root + Interval::PERFECT_FIFTH;
         b.add(
             Chord::new(v, ChordQuality::Dominant7),
-            "V7",
+            Some(RomanNumeral::new(5, ChordQuality::Dominant7)),
             format!("ii→V7 from {prev_label}"),
             SuggestionCategory::Resolution,
         );
         b.add(
             Chord::new(v, ChordQuality::Major),
-            "V",
+            Some(RomanNumeral::new(5, ChordQuality::Major)),
             format!("ii→V from {prev_label}"),
             SuggestionCategory::Resolution,
         );
@@ -553,13 +559,13 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
         let v = p_root + Interval::MAJOR_SECOND;
         b.add(
             Chord::new(v, ChordQuality::Major),
-            "V",
+            Some(RomanNumeral::new(5, ChordQuality::Major)),
             format!("IV→V motion from {prev_label}"),
             SuggestionCategory::Resolution,
         );
         b.add(
             Chord::new(v, ChordQuality::Dominant7),
-            "V7",
+            Some(RomanNumeral::new(5, ChordQuality::Dominant7)),
             format!("IV→V7 motion from {prev_label}"),
             SuggestionCategory::Resolution,
         );
@@ -573,7 +579,7 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
         let rel_min = p_root + Interval::MAJOR_SIXTH;
         b.add(
             Chord::new(rel_min, ChordQuality::Minor),
-            "vi",
+            Some(RomanNumeral::new(6, ChordQuality::Minor)),
             format!("relative minor of {prev_label}"),
             SuggestionCategory::Relative,
         );
@@ -583,7 +589,7 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
         let rel_maj = p_root + Interval::MINOR_THIRD;
         b.add(
             Chord::new(rel_maj, ChordQuality::Major),
-            "III",
+            Some(RomanNumeral::new(3, ChordQuality::Major)),
             format!("relative major of {prev_label}"),
             SuggestionCategory::Relative,
         );
@@ -592,15 +598,35 @@ fn add_resolution(b: &mut Builder, prev: Chord) {
 
 fn add_borrowed(b: &mut Builder, bk: KeyMatch) {
     // Borrowed from the parallel minor: ♭III, iv, ♭VI, ♭VII.
-    let templates = [
-        (Interval::MINOR_THIRD, ChordQuality::Major, "♭III", "borrowed from parallel minor"),
-        (Interval::MINOR_SIXTH, ChordQuality::Major, "♭VI",  "borrowed from parallel minor"),
-        (Interval::MINOR_SEVENTH, ChordQuality::Major, "♭VII", "borrowed from parallel minor"),
-        (Interval::PERFECT_FOURTH, ChordQuality::Minor, "iv", "borrowed minor iv"),
+    let templates: [(Interval, ChordQuality, RomanNumeral, &str); 4] = [
+        (
+            Interval::MINOR_THIRD,
+            ChordQuality::Major,
+            RomanNumeral::flat(3, ChordQuality::Major),
+            "borrowed from parallel minor",
+        ),
+        (
+            Interval::MINOR_SIXTH,
+            ChordQuality::Major,
+            RomanNumeral::flat(6, ChordQuality::Major),
+            "borrowed from parallel minor",
+        ),
+        (
+            Interval::MINOR_SEVENTH,
+            ChordQuality::Major,
+            RomanNumeral::flat(7, ChordQuality::Major),
+            "borrowed from parallel minor",
+        ),
+        (
+            Interval::PERFECT_FOURTH,
+            ChordQuality::Minor,
+            RomanNumeral::new(4, ChordQuality::Minor),
+            "borrowed minor iv",
+        ),
     ];
     for (interval, quality, roman, desc) in templates {
         let chord = Chord::new(bk.key.tonic + interval, quality);
-        b.add(chord, roman, desc.to_string(), SuggestionCategory::Borrowed);
+        b.add(chord, Some(roman), desc.to_string(), SuggestionCategory::Borrowed);
     }
 }
 
@@ -614,10 +640,11 @@ fn add_secondary_dominants(b: &mut Builder, bk: KeyMatch) {
         let target_pc = bk.key.tonic + d.interval;
         let sec_dom_pc = target_pc + Interval::PERFECT_FIFTH;
         let chord = Chord::new(sec_dom_pc, ChordQuality::Dominant7);
-        let roman = format!("V7/{}", d.roman);
+        let roman = RomanNumeral::new(5, ChordQuality::Dominant7)
+            .secondary_of(d.roman.clone());
         b.add(
             chord,
-            &roman,
+            Some(roman),
             format!("secondary dominant resolving to {target_pc}"),
             SuggestionCategory::Secondary,
         );
@@ -639,13 +666,13 @@ fn add_chromatic(b: &mut Builder, prev: Chord) {
         let reason = format!("{dir} {dist} from {prev_label}");
         b.add(
             Chord::new(target_pc, ChordQuality::Major),
-            "",
+            None,
             reason.clone(),
             SuggestionCategory::Chromatic,
         );
         b.add(
             Chord::new(target_pc, ChordQuality::Minor),
-            "",
+            None,
             reason,
             SuggestionCategory::Chromatic,
         );
@@ -656,13 +683,13 @@ fn add_starting(b: &mut Builder) {
     for &root in &STARTING_ROOTS {
         b.add(
             Chord::new(root, ChordQuality::Major),
-            "",
+            None,
             "common starting key".to_string(),
             SuggestionCategory::Diatonic,
         );
         b.add(
             Chord::new(root, ChordQuality::Minor),
-            "",
+            None,
             "common starting key".to_string(),
             SuggestionCategory::Diatonic,
         );
@@ -965,9 +992,15 @@ mod tests {
         let a_minor = first_with_chord(&result, chord(PitchClass::A, ChordQuality::Minor));
         assert!(f_major.is_some());
         assert_eq!(f_major.unwrap().category, SuggestionCategory::Diatonic);
-        assert_eq!(f_major.unwrap().roman, "IV");
+        assert_eq!(
+            f_major.unwrap().roman.as_ref().map(|r| r.to_string()).as_deref(),
+            Some("IV")
+        );
         assert!(a_minor.is_some());
-        assert_eq!(a_minor.unwrap().roman, "vi");
+        assert_eq!(
+            a_minor.unwrap().roman.as_ref().map(|r| r.to_string()).as_deref(),
+            Some("vi")
+        );
     }
 
     #[test]
@@ -1025,7 +1058,10 @@ mod tests {
         let eb = first_with_chord(&result, chord(PitchClass::D_SHARP, ChordQuality::Major));
         assert!(eb.is_some(), "♭III should appear as a borrowed chord");
         assert_eq!(eb.unwrap().category, SuggestionCategory::Borrowed);
-        assert_eq!(eb.unwrap().roman, "♭III");
+        assert_eq!(
+            eb.unwrap().roman.as_ref().map(|r| r.to_string()).as_deref(),
+            Some("♭III")
+        );
     }
 
     #[test]
@@ -1041,7 +1077,11 @@ mod tests {
         let a7 = first_with_chord(&result, chord(PitchClass::A, ChordQuality::Dominant7));
         assert!(a7.is_some(), "V7/ii (A7) should be a secondary dominant");
         assert_eq!(a7.unwrap().category, SuggestionCategory::Secondary);
-        assert!(a7.unwrap().roman.starts_with("V7/"));
+        let roman_str = a7.unwrap().roman.as_ref().map(|r| r.to_string());
+        assert!(
+            roman_str.as_deref().is_some_and(|s| s.starts_with("V7/")),
+            "expected V7/X, got {roman_str:?}"
+        );
     }
 
     #[test]

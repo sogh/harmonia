@@ -10,22 +10,24 @@ use std::fmt;
 use crate::chord::{Chord, ChordQuality};
 use crate::interval::Interval;
 use crate::pitch::PitchClass;
+use crate::roman::RomanNumeral;
 use crate::scale::{Scale, ScaleKind};
 
 /// One row of a key's diatonic chord template: the interval from the
 /// tonic, the chord quality, and the Roman-numeral label.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DiatonicChord {
     pub interval: Interval,
     pub quality: ChordQuality,
-    pub roman: &'static str,
+    pub roman: RomanNumeral,
 }
 
 impl DiatonicChord {
     pub const fn new(
         interval: Interval,
         quality: ChordQuality,
-        roman: &'static str,
+        roman: RomanNumeral,
     ) -> Self {
         Self {
             interval,
@@ -42,32 +44,29 @@ impl DiatonicChord {
 
 /// Diatonic triads of a major key, indexed I..vii°.
 pub const MAJOR_KEY_TRIADS: &[DiatonicChord] = &[
-    DiatonicChord::new(Interval::UNISON, ChordQuality::Major, "I"),
-    DiatonicChord::new(Interval::MAJOR_SECOND, ChordQuality::Minor, "ii"),
-    DiatonicChord::new(Interval::MAJOR_THIRD, ChordQuality::Minor, "iii"),
-    DiatonicChord::new(Interval::PERFECT_FOURTH, ChordQuality::Major, "IV"),
-    DiatonicChord::new(Interval::PERFECT_FIFTH, ChordQuality::Major, "V"),
-    DiatonicChord::new(Interval::MAJOR_SIXTH, ChordQuality::Minor, "vi"),
-    DiatonicChord::new(Interval::MAJOR_SEVENTH, ChordQuality::Diminished, "vii°"),
+    DiatonicChord::new(Interval::UNISON, ChordQuality::Major, RomanNumeral::new(1, ChordQuality::Major)),
+    DiatonicChord::new(Interval::MAJOR_SECOND, ChordQuality::Minor, RomanNumeral::new(2, ChordQuality::Minor)),
+    DiatonicChord::new(Interval::MAJOR_THIRD, ChordQuality::Minor, RomanNumeral::new(3, ChordQuality::Minor)),
+    DiatonicChord::new(Interval::PERFECT_FOURTH, ChordQuality::Major, RomanNumeral::new(4, ChordQuality::Major)),
+    DiatonicChord::new(Interval::PERFECT_FIFTH, ChordQuality::Major, RomanNumeral::new(5, ChordQuality::Major)),
+    DiatonicChord::new(Interval::MAJOR_SIXTH, ChordQuality::Minor, RomanNumeral::new(6, ChordQuality::Minor)),
+    DiatonicChord::new(Interval::MAJOR_SEVENTH, ChordQuality::Diminished, RomanNumeral::new(7, ChordQuality::Diminished)),
 ];
 
 /// Diatonic seventh chords of a major key, indexed Imaj7..viiø7.
 pub const MAJOR_KEY_SEVENTHS: &[DiatonicChord] = &[
-    DiatonicChord::new(Interval::UNISON, ChordQuality::Major7, "Imaj7"),
-    DiatonicChord::new(Interval::MAJOR_SECOND, ChordQuality::Minor7, "ii7"),
-    DiatonicChord::new(Interval::MAJOR_THIRD, ChordQuality::Minor7, "iii7"),
-    DiatonicChord::new(Interval::PERFECT_FOURTH, ChordQuality::Major7, "IVmaj7"),
-    DiatonicChord::new(Interval::PERFECT_FIFTH, ChordQuality::Dominant7, "V7"),
-    DiatonicChord::new(Interval::MAJOR_SIXTH, ChordQuality::Minor7, "vi7"),
-    DiatonicChord::new(
-        Interval::MAJOR_SEVENTH,
-        ChordQuality::HalfDiminished7,
-        "viiø7",
-    ),
+    DiatonicChord::new(Interval::UNISON, ChordQuality::Major7, RomanNumeral::new(1, ChordQuality::Major7)),
+    DiatonicChord::new(Interval::MAJOR_SECOND, ChordQuality::Minor7, RomanNumeral::new(2, ChordQuality::Minor7)),
+    DiatonicChord::new(Interval::MAJOR_THIRD, ChordQuality::Minor7, RomanNumeral::new(3, ChordQuality::Minor7)),
+    DiatonicChord::new(Interval::PERFECT_FOURTH, ChordQuality::Major7, RomanNumeral::new(4, ChordQuality::Major7)),
+    DiatonicChord::new(Interval::PERFECT_FIFTH, ChordQuality::Dominant7, RomanNumeral::new(5, ChordQuality::Dominant7)),
+    DiatonicChord::new(Interval::MAJOR_SIXTH, ChordQuality::Minor7, RomanNumeral::new(6, ChordQuality::Minor7)),
+    DiatonicChord::new(Interval::MAJOR_SEVENTH, ChordQuality::HalfDiminished7, RomanNumeral::new(7, ChordQuality::HalfDiminished7)),
 ];
 
 /// A key — currently always major. Holds only the tonic [`PitchClass`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Key {
     pub tonic: PitchClass,
 }
@@ -120,28 +119,28 @@ impl Key {
     /// // Diatonic chords get exact Roman labels.
     /// let g: Chord = "G".parse().unwrap();
     /// let g7: Chord = "G7".parse().unwrap();
-    /// assert_eq!(c_major.roman_for(g).as_deref(),  Some("V"));
-    /// assert_eq!(c_major.roman_for(g7).as_deref(), Some("V7"));
+    /// assert_eq!(c_major.roman_for(g).map(|r| r.to_string()).as_deref(),  Some("V"));
+    /// assert_eq!(c_major.roman_for(g7).map(|r| r.to_string()).as_deref(), Some("V7"));
     ///
     /// // Non-diatonic dom7 on a major degree gets the fuzzy label.
     /// let c7: Chord = "C7".parse().unwrap();
-    /// assert_eq!(c_major.roman_for(c7).as_deref(), Some("I7"));
+    /// assert_eq!(c_major.roman_for(c7).map(|r| r.to_string()).as_deref(), Some("I7"));
     ///
     /// // Truly out-of-key chords return None.
     /// let f_sharp: Chord = "F#".parse().unwrap();
     /// assert!(c_major.roman_for(f_sharp).is_none());
     /// ```
-    pub fn roman_for(self, chord: Chord) -> Option<String> {
+    pub fn roman_for(self, chord: Chord) -> Option<RomanNumeral> {
         let interval = chord.root - self.tonic;
 
         for d in self.diatonic_triads() {
             if d.interval == interval && d.quality == chord.quality {
-                return Some(d.roman.to_string());
+                return Some(d.roman.clone());
             }
         }
         for d in self.diatonic_sevenths() {
             if d.interval == interval && d.quality == chord.quality {
-                return Some(d.roman.to_string());
+                return Some(d.roman.clone());
             }
         }
 
@@ -151,10 +150,10 @@ impl Key {
             }
             match (d.quality, chord.quality) {
                 (ChordQuality::Major, ChordQuality::Dominant7) => {
-                    return Some(format!("{}7", d.roman));
+                    return Some(d.roman.clone().with_quality(ChordQuality::Dominant7));
                 }
                 (ChordQuality::Minor, ChordQuality::Minor7) => {
-                    return Some(format!("{}7", d.roman));
+                    return Some(d.roman.clone().with_quality(ChordQuality::Minor7));
                 }
                 _ => {}
             }
@@ -211,6 +210,10 @@ mod tests {
         assert_eq!(v7.to_string(), "A7");
     }
 
+    fn roman_str(key: Key, chord: Chord) -> Option<String> {
+        key.roman_for(chord).map(|r| r.to_string())
+    }
+
     #[test]
     fn roman_for_diatonic_triads_in_c_major() {
         let key = Key::new(PitchClass::C);
@@ -225,7 +228,7 @@ mod tests {
         ];
         for (root, q, expected) in cases {
             assert_eq!(
-                key.roman_for(Chord::new(root, q)).as_deref(),
+                roman_str(key, Chord::new(root, q)).as_deref(),
                 Some(expected),
                 "{root:?} {q:?}"
             );
@@ -236,18 +239,16 @@ mod tests {
     fn roman_for_seventh_chords_in_c_major() {
         let key = Key::new(PitchClass::C);
         assert_eq!(
-            key.roman_for(Chord::new(PitchClass::G, ChordQuality::Dominant7))
-                .as_deref(),
+            roman_str(key, Chord::new(PitchClass::G, ChordQuality::Dominant7)).as_deref(),
             Some("V7")
         );
         assert_eq!(
-            key.roman_for(Chord::new(PitchClass::B, ChordQuality::HalfDiminished7))
+            roman_str(key, Chord::new(PitchClass::B, ChordQuality::HalfDiminished7))
                 .as_deref(),
             Some("viiø7")
         );
         assert_eq!(
-            key.roman_for(Chord::new(PitchClass::C, ChordQuality::Major7))
-                .as_deref(),
+            roman_str(key, Chord::new(PitchClass::C, ChordQuality::Major7)).as_deref(),
             Some("Imaj7")
         );
     }
@@ -257,14 +258,12 @@ mod tests {
         // C7 in C major: I is major, dom7 doesn't match exactly → fuzzy "I7".
         let key = Key::new(PitchClass::C);
         assert_eq!(
-            key.roman_for(Chord::new(PitchClass::C, ChordQuality::Dominant7))
-                .as_deref(),
+            roman_str(key, Chord::new(PitchClass::C, ChordQuality::Dominant7)).as_deref(),
             Some("I7")
         );
         // F7 in C major → "IV7".
         assert_eq!(
-            key.roman_for(Chord::new(PitchClass::F, ChordQuality::Dominant7))
-                .as_deref(),
+            roman_str(key, Chord::new(PitchClass::F, ChordQuality::Dominant7)).as_deref(),
             Some("IV7")
         );
     }

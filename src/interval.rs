@@ -8,6 +8,8 @@ use std::fmt;
 /// reduced modulo 12. Use [`PitchClass`](crate::PitchClass) arithmetic when
 /// you want octave-equivalent behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Interval(u16);
 
 impl Interval {

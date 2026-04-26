@@ -16,6 +16,7 @@ use crate::spelling::spell_heptatonic;
 /// the seven church modes, three pentatonic-family scales, harmonic and
 /// melodic minor, and four symmetric scales.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ScaleKind {
     Ionian,
     Dorian,
@@ -37,6 +38,7 @@ pub enum ScaleKind {
 
 /// High-level grouping used by the original UI to organize the catalogue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ScaleGroup {
     Modes,
     Pentatonic,
@@ -449,6 +451,7 @@ impl fmt::Display for ScaleGroup {
 
 /// A concrete scale: a [`ScaleKind`] anchored at a root [`PitchClass`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Scale {
     pub root: PitchClass,
     pub kind: ScaleKind,

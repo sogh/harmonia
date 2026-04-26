@@ -19,7 +19,8 @@
 //!
 //! // Roman-numeral analysis in a key.
 //! let c_major = Key::new(PitchClass::C);
-//! assert_eq!(c_major.roman_for(v_chord).as_deref(), Some("V7"));
+//! let roman = c_major.roman_for(v_chord).unwrap();
+//! assert_eq!(roman.to_string(), "V7");
 //!
 //! // Diatonic spelling.
 //! let g_major: Scale = "G Ionian".parse().unwrap();
@@ -64,6 +65,13 @@
 //! - [`suggest_next_chords`] — context-aware chord recommender with
 //!   diatonic, resolution, borrowed, secondary, relative, and chromatic
 //!   categories.
+//!
+//! ## Crate features
+//!
+//! - **`serde`** *(off by default)* — derives `Serialize` and `Deserialize`
+//!   on every public data type. `PitchClass` and `Interval` serialize as
+//!   integers; `SuggestionCategory` as a lowercase string; everything else
+//!   uses the default `serde` representation.
 
 pub mod analysis;
 pub mod chord;
@@ -72,6 +80,7 @@ pub mod key;
 pub mod note;
 pub mod parse;
 pub mod pitch;
+pub mod roman;
 pub mod scale;
 pub mod spelling;
 
@@ -85,5 +94,6 @@ pub use key::{DiatonicChord, Key};
 pub use note::{Accidental, Letter, Note};
 pub use parse::ParseError;
 pub use pitch::PitchClass;
+pub use roman::{Alteration, RomanNumeral};
 pub use scale::{Scale, ScaleGroup, ScaleKind};
 pub use spelling::spell_heptatonic;

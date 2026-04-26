@@ -8,6 +8,7 @@ use crate::pitch::PitchClass;
 
 /// One of the seven natural letters used to name notes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Letter {
     C,
     D,
@@ -62,6 +63,7 @@ impl fmt::Display for Letter {
 
 /// An accidental applied to a letter: from double-flat to double-sharp.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Accidental {
     DoubleFlat,
     Flat,
@@ -106,6 +108,7 @@ impl fmt::Display for Accidental {
 /// spellings of the same pitch class (e.g. `F♯` vs `G♭`) are not equal as
 /// `Note`s but have the same [`PitchClass`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Note {
     pub letter: Letter,
     pub accidental: Accidental,

@@ -11,6 +11,8 @@ use crate::parse::ParseError;
 /// A pitch class, an integer in `0..12` representing a tone independent of
 /// octave. Index 0 is C, 1 is C♯/D♭, …, 11 is B.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(into = "u8", from = "u8"))]
 pub struct PitchClass(u8);
 
 const SHARP_NAMES: [&str; 12] = [
@@ -52,6 +54,12 @@ impl PitchClass {
 impl From<u8> for PitchClass {
     fn from(value: u8) -> Self {
         Self::new(value)
+    }
+}
+
+impl From<PitchClass> for u8 {
+    fn from(pc: PitchClass) -> u8 {
+        pc.0
     }
 }
 

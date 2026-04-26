@@ -15,6 +15,7 @@ use crate::pitch::PitchClass;
 /// A chord quality — the harmonic shape (interval pattern) of a chord
 /// independent of its root.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ChordQuality {
     Major,
     Minor,
@@ -230,6 +231,7 @@ impl FromStr for ChordQuality {
 
 /// A concrete chord: a [`ChordQuality`] anchored at a root [`PitchClass`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Chord {
     pub root: PitchClass,
     pub quality: ChordQuality,
