@@ -23,9 +23,15 @@
 //! - [`Scale`] — a [`ScaleKind`] anchored at a root [`PitchClass`].
 //! - [`ChordQuality`] — 12 chord qualities (6 triads + 6 sevenths).
 //! - [`Chord`] — a [`ChordQuality`] anchored at a root [`PitchClass`].
+//!
+//! ## Analysis
+//!
+//! - [`Key`] — a (currently always major) key. Provides diatonic chord
+//!   templates and Roman-numeral labels via [`Key::roman_for`].
 
 pub mod chord;
 pub mod interval;
+pub mod key;
 pub mod note;
 pub mod pitch;
 pub mod scale;
@@ -33,6 +39,7 @@ pub mod spelling;
 
 pub use chord::{Chord, ChordQuality};
 pub use interval::Interval;
+pub use key::{DiatonicChord, Key};
 pub use note::{Accidental, Letter, Note};
 pub use pitch::PitchClass;
 pub use scale::{Scale, ScaleGroup, ScaleKind};
