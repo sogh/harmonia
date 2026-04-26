@@ -232,12 +232,13 @@ fn quality_for(uppercase: bool, suffix: &str) -> Option<ChordQuality> {
     })
 }
 
-/// Parse a Roman numeral. Inverse of [`RomanNumeral`]'s [`Display`] impl.
+/// Parse a Roman numeral. Inverse of [`RomanNumeral`]'s
+/// [`Display`](fmt::Display) impl.
 ///
 /// Accepts the standard chromatic alterations (`♭`/`♯`, with `b`/`#` as
 /// ASCII alternatives), the seven Roman digits in either case, the
-/// quality suffixes from [`Display`], and `/<target>` for secondary
-/// chords (the target is parsed recursively).
+/// quality suffixes the `Display` impl emits, and `/<target>` for
+/// secondary chords (the target is parsed recursively).
 ///
 /// # Examples
 ///

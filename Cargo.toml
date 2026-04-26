@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["music", "theory", "harmony", "scales", "chords"]
 categories = ["multimedia::audio"]
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
 # Off by default; enable with `harmonia = { version = "...", features = ["serde"] }`
 # to derive Serialize/Deserialize on every public data type.
