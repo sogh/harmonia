@@ -32,6 +32,9 @@
 //!   against every major key, returning candidates ranked by fit.
 //! - [`suggest_scales_for_bracket`](analysis::suggest_scales_for_bracket)
 //!   — rank scales that fit a lead-line gap between two chords.
+//! - [`suggest_next_chords`](analysis::suggest_next_chords) — context-
+//!   aware chord recommender with diatonic, resolution, borrowed,
+//!   secondary, relative, and chromatic categories.
 
 pub mod analysis;
 pub mod chord;
@@ -42,7 +45,10 @@ pub mod pitch;
 pub mod scale;
 pub mod spelling;
 
-pub use analysis::{detect_key, suggest_scales_for_bracket, KeyMatch, ScaleSuggestion};
+pub use analysis::{
+    detect_key, suggest_next_chords, suggest_scales_for_bracket, ChordSuggestion,
+    ChordSuggestionResult, KeyMatch, ScaleSuggestion, SuggestionCategory,
+};
 pub use chord::{Chord, ChordQuality};
 pub use interval::Interval;
 pub use key::{DiatonicChord, Key};
