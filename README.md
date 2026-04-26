@@ -88,7 +88,7 @@ assert_eq!(labels, ["G", "A", "B", "C", "D", "E", "F♯"]);
 ```
 
 The spelling algorithm picks the right accidentals so each natural
-letter A–G appears exactly once — no `A♯` next to a `B`.
+letter A–G appears exactly once — no `A♯` next to an `A`.
 
 ### Suggest the next chord
 
