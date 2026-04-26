@@ -2,6 +2,7 @@
 name = "harmonia"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 description = "Instrument-agnostic music theory primitives: pitch classes, intervals, scales, chords, keys, and progressions."
 license = "MIT"
 repository = "https://github.com/sogh/harmonia"
