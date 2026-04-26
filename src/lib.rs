@@ -30,6 +30,8 @@
 //!   templates and Roman-numeral labels via [`Key::roman_for`].
 //! - [`detect_key`](analysis::detect_key) — score a chord progression
 //!   against every major key, returning candidates ranked by fit.
+//! - [`suggest_scales_for_bracket`](analysis::suggest_scales_for_bracket)
+//!   — rank scales that fit a lead-line gap between two chords.
 
 pub mod analysis;
 pub mod chord;
@@ -40,7 +42,7 @@ pub mod pitch;
 pub mod scale;
 pub mod spelling;
 
-pub use analysis::{detect_key, KeyMatch};
+pub use analysis::{detect_key, suggest_scales_for_bracket, KeyMatch, ScaleSuggestion};
 pub use chord::{Chord, ChordQuality};
 pub use interval::Interval;
 pub use key::{DiatonicChord, Key};

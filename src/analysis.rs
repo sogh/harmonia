@@ -3,6 +3,7 @@
 use crate::chord::Chord;
 use crate::key::Key;
 use crate::pitch::PitchClass;
+use crate::scale::{Scale, ScaleGroup};
 
 /// One row of [`detect_key`]'s output: a candidate key, the count of input
 /// chords that fit it diatonically, and the total chord count.
@@ -69,6 +70,139 @@ pub fn detect_key(chords: &[Chord]) -> Vec<KeyMatch> {
             .then_with(|| a.key.tonic.value().cmp(&b.key.tonic.value()))
     });
     results
+}
+
+// ── Bracket scale suggestions ─────────────────────────────────────────
+
+/// One suggestion from [`suggest_scales_for_bracket`]: a candidate scale
+/// for a lead-line gap between two chords, with which side(s) of the
+/// bracket it fits and a human-readable reasoning string.
+#[derive(Clone, Debug)]
+pub struct ScaleSuggestion {
+    pub scale: Scale,
+    /// True iff a previous chord was supplied **and** every one of its
+    /// pitch classes lies in `scale`.
+    pub fits_prev: bool,
+    /// True iff a next chord was supplied **and** every one of its
+    /// pitch classes lies in `scale`.
+    pub fits_next: bool,
+    /// One-line explanation of why this scale was suggested, suitable for
+    /// rendering directly in a UI.
+    pub reasoning: String,
+}
+
+impl ScaleSuggestion {
+    /// True if both chords were supplied and both are covered by the scale.
+    pub fn fits_both(&self) -> bool {
+        self.fits_prev && self.fits_next
+    }
+}
+
+fn scale_covers_chord(scale: &Scale, chord: &Chord) -> bool {
+    chord.pitch_classes().all(|pc| scale.contains(pc))
+}
+
+/// Suggest scales for a lead-line gap bracketed by two chords.
+///
+/// Searches every (root, mode) pair across the seven church modes and
+/// returns those that contain the chord tones of `prev`, `next`, or
+/// both. Results are ranked by:
+///
+/// 1. Scales that fit *both* chords beat scales that fit only one.
+/// 2. Scales rooted on the previous chord's root are preferred (a strong
+///    bias toward the most idiomatic mode), then on the next chord's root.
+/// 3. Within ties, simpler modes win — Ionian/Dorian over Locrian.
+///
+/// Returns an empty vector if both `prev` and `next` are `None`.
+///
+/// Ports `suggestScalesForBracket` from `theory.js`.
+pub fn suggest_scales_for_bracket(
+    prev: Option<Chord>,
+    next: Option<Chord>,
+) -> Vec<ScaleSuggestion> {
+    if prev.is_none() && next.is_none() {
+        return Vec::new();
+    }
+
+    let modes = ScaleGroup::Modes.scales();
+    let mut scored: Vec<(i32, ScaleSuggestion)> = Vec::new();
+
+    for tonic_pc in 0..12u8 {
+        let tonic = PitchClass::new(tonic_pc);
+        for (mode_rank, &kind) in modes.iter().enumerate() {
+            let scale = Scale::new(tonic, kind);
+
+            let fits_prev = prev.is_some_and(|c| scale_covers_chord(&scale, &c));
+            let fits_next = next.is_some_and(|c| scale_covers_chord(&scale, &c));
+
+            // Keep a scale only if it covers a chord that was actually
+            // supplied. (When both chords are supplied, fitting either
+            // side is enough; one-sided suggestions still help bridging.)
+            let keep = match (prev.is_some(), next.is_some()) {
+                (true, true) => fits_prev || fits_next,
+                (true, false) => fits_prev,
+                (false, true) => fits_next,
+                (false, false) => false,
+            };
+            if !keep {
+                continue;
+            }
+
+            // For ranking, a missing side counts as "satisfied" — that's
+            // what gives the prev-only / next-only cases base priority 0.
+            let satisfied_both =
+                (prev.is_none() || fits_prev) && (next.is_none() || fits_next);
+            let mut priority: i32 = if satisfied_both { 0 } else { 100 };
+            if prev.is_some_and(|c| c.root == tonic) {
+                priority -= 10;
+            } else if next.is_some_and(|c| c.root == tonic) {
+                priority -= 5;
+            }
+            priority += mode_rank as i32;
+
+            let reasoning = bracket_reasoning(&scale, prev, next, fits_prev, fits_next);
+
+            scored.push((
+                priority,
+                ScaleSuggestion {
+                    scale,
+                    fits_prev,
+                    fits_next,
+                    reasoning,
+                },
+            ));
+        }
+    }
+
+    scored.sort_by_key(|(p, _)| *p);
+    scored.into_iter().map(|(_, s)| s).collect()
+}
+
+fn bracket_reasoning(
+    scale: &Scale,
+    prev: Option<Chord>,
+    next: Option<Chord>,
+    fits_prev: bool,
+    fits_next: bool,
+) -> String {
+    let scale_name = scale.to_string();
+    match (prev, next, fits_prev, fits_next) {
+        (Some(p), Some(n), true, true) if p.root == n.root => {
+            format!("Both chords are diatonic to {scale_name}")
+        }
+        (Some(p), Some(n), true, true) => {
+            format!("{p} and {n} are both diatonic to {scale_name}")
+        }
+        (Some(p), Some(_), true, false) => {
+            format!("Fits the previous chord ({p}); bridge to the next")
+        }
+        (Some(_), Some(n), false, true) => {
+            format!("Fits the next chord ({n}); approach from the previous")
+        }
+        (Some(p), None, true, false) => format!("Fits {p}"),
+        (None, Some(n), false, true) => format!("Fits {n}"),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -193,5 +327,122 @@ mod tests {
             total: 0,
         };
         assert_eq!(m.ratio(), 0.0);
+    }
+
+    // ── suggest_scales_for_bracket ────────────────────────────────
+
+    use crate::scale::ScaleKind;
+
+    #[test]
+    fn bracket_g_to_am_picks_a_diatonic_mode() {
+        // Ported from theory.test.js. G major → A minor — both share
+        // the white-key diatonic set, so the top suggestion should be
+        // G Ionian, G Mixolydian, or C Ionian (all valid choices).
+        let suggestions = suggest_scales_for_bracket(
+            Some(chord(PitchClass::G, ChordQuality::Major)),
+            Some(chord(PitchClass::A, ChordQuality::Minor)),
+        );
+        assert!(!suggestions.is_empty());
+        assert!(suggestions[0].fits_both());
+        let top = suggestions[0].scale;
+        let acceptable = [
+            Scale::new(PitchClass::G, ScaleKind::Ionian),
+            Scale::new(PitchClass::G, ScaleKind::Mixolydian),
+            Scale::new(PitchClass::C, ScaleKind::Ionian),
+        ];
+        assert!(
+            acceptable.contains(&top),
+            "top suggestion {top} should be one of the diatonic modes"
+        );
+        assert!(!suggestions[0].reasoning.is_empty());
+    }
+
+    #[test]
+    fn bracket_same_chord_on_both_sides() {
+        let g = chord(PitchClass::G, ChordQuality::Major);
+        let suggestions = suggest_scales_for_bracket(Some(g), Some(g));
+        assert!(!suggestions.is_empty());
+        assert!(suggestions[0].fits_both());
+        assert!(suggestions[0].reasoning.starts_with("Both chords"));
+    }
+
+    #[test]
+    fn bracket_with_prev_only() {
+        let suggestions = suggest_scales_for_bracket(
+            Some(chord(PitchClass::G, ChordQuality::Major)),
+            None,
+        );
+        assert!(!suggestions.is_empty());
+        // Every suggestion really covers the previous chord, and no
+        // suggestion claims to fit a next chord that wasn't supplied.
+        assert!(suggestions.iter().all(|s| s.fits_prev));
+        assert!(suggestions.iter().all(|s| !s.fits_next));
+        assert!(suggestions[0].reasoning.starts_with("Fits "));
+    }
+
+    #[test]
+    fn bracket_with_next_only() {
+        let suggestions = suggest_scales_for_bracket(
+            None,
+            Some(chord(PitchClass::A, ChordQuality::Minor)),
+        );
+        assert!(!suggestions.is_empty());
+        assert!(suggestions.iter().all(|s| !s.fits_prev));
+        assert!(suggestions.iter().all(|s| s.fits_next));
+    }
+
+    #[test]
+    fn bracket_with_no_chords_returns_empty() {
+        assert!(suggest_scales_for_bracket(None, None).is_empty());
+    }
+
+    #[test]
+    fn bracket_distant_chords_still_returns_partial_matches() {
+        // C major → F♯ major — no major key contains both, but each
+        // chord individually fits several modes, so partial-fit
+        // suggestions should still appear.
+        let suggestions = suggest_scales_for_bracket(
+            Some(chord(PitchClass::C, ChordQuality::Major)),
+            Some(chord(PitchClass::F_SHARP, ChordQuality::Major)),
+        );
+        assert!(!suggestions.is_empty());
+        // Each suggestion fits at least one side.
+        assert!(suggestions.iter().all(|s| s.fits_prev || s.fits_next));
+    }
+
+    #[test]
+    fn bracket_results_sorted_by_priority() {
+        // For G→Am, fits_both suggestions must come before fits-one-only
+        // suggestions in the output.
+        let suggestions = suggest_scales_for_bracket(
+            Some(chord(PitchClass::G, ChordQuality::Major)),
+            Some(chord(PitchClass::A, ChordQuality::Minor)),
+        );
+        let first_partial = suggestions.iter().position(|s| !s.fits_both());
+        if let Some(idx) = first_partial {
+            // Everything before that index must fit both.
+            assert!(suggestions[..idx].iter().all(|s| s.fits_both()));
+        }
+    }
+
+    #[test]
+    fn bracket_prev_rooted_mode_beats_next_rooted() {
+        // G major → A minor: the -10 prev bonus should rank a G-rooted
+        // mode above an A-rooted mode that also fits both, all else equal.
+        let suggestions = suggest_scales_for_bracket(
+            Some(chord(PitchClass::G, ChordQuality::Major)),
+            Some(chord(PitchClass::A, ChordQuality::Minor)),
+        );
+        let g_pos = suggestions.iter().position(|s| {
+            s.scale == Scale::new(PitchClass::G, ScaleKind::Ionian)
+        });
+        let a_pos = suggestions.iter().position(|s| {
+            s.scale == Scale::new(PitchClass::A, ScaleKind::Aeolian)
+        });
+        assert!(g_pos.is_some() && a_pos.is_some());
+        assert!(
+            g_pos.unwrap() < a_pos.unwrap(),
+            "G Ionian should rank above A Aeolian (prev-rooted bonus)"
+        );
     }
 }
