@@ -5,8 +5,11 @@
 //! dominant 7, min7, minor-major 7, dim7, half-diminished 7).
 
 use std::fmt;
+use std::str::FromStr;
 
 use crate::interval::Interval;
+use crate::note::Note;
+use crate::parse::ParseError;
 use crate::pitch::PitchClass;
 
 /// A chord quality — the harmonic shape (interval pattern) of a chord
@@ -183,6 +186,48 @@ impl fmt::Display for ChordQuality {
     }
 }
 
+/// Parse a chord quality from its short symbol — the inverse of
+/// [`ChordQuality::symbol`].
+///
+/// Accepts `""` (major), `"m"`, `"dim"`, `"aug"`, `"sus2"`, `"sus4"`,
+/// `"maj7"`, `"7"`, `"m7"`, `"mM7"`, `"dim7"`, and `"m7♭5"` (with
+/// `"m7b5"` as an ASCII alternative).
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::ChordQuality;
+///
+/// assert_eq!("".parse::<ChordQuality>().unwrap(), ChordQuality::Major);
+/// assert_eq!("m7".parse::<ChordQuality>().unwrap(), ChordQuality::Minor7);
+/// assert_eq!("m7b5".parse::<ChordQuality>().unwrap(), ChordQuality::HalfDiminished7);
+/// ```
+impl FromStr for ChordQuality {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "" => ChordQuality::Major,
+            "m" => ChordQuality::Minor,
+            "dim" => ChordQuality::Diminished,
+            "aug" => ChordQuality::Augmented,
+            "sus2" => ChordQuality::Sus2,
+            "sus4" => ChordQuality::Sus4,
+            "maj7" => ChordQuality::Major7,
+            "7" => ChordQuality::Dominant7,
+            "m7" => ChordQuality::Minor7,
+            "mM7" => ChordQuality::MinorMajor7,
+            "dim7" => ChordQuality::Diminished7,
+            "m7♭5" | "m7b5" => ChordQuality::HalfDiminished7,
+            other => {
+                return Err(ParseError::new(format!(
+                    "unknown chord quality: {other:?}"
+                )))
+            }
+        })
+    }
+}
+
 /// A concrete chord: a [`ChordQuality`] anchored at a root [`PitchClass`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Chord {
@@ -211,6 +256,59 @@ impl Chord {
 impl fmt::Display for Chord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}", self.root, self.quality.symbol())
+    }
+}
+
+/// Parse a chord from its conventional symbol form (root + quality).
+///
+/// The root is parsed by trying successively longer prefixes against
+/// [`Note::from_str`] and taking the longest match — this lets `"Bb7"`
+/// resolve correctly as `B♭` + `7` rather than `B` + `b7`.
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{Chord, ChordQuality, PitchClass};
+///
+/// let cm: Chord = "Cm".parse().unwrap();
+/// assert_eq!(cm, Chord::new(PitchClass::C, ChordQuality::Minor));
+///
+/// let g7:   Chord = "G7".parse().unwrap();
+/// let bdim: Chord = "Bdim".parse().unwrap();
+/// let half: Chord = "Bm7♭5".parse().unwrap();
+/// let half_ascii: Chord = "Bm7b5".parse().unwrap();
+/// assert_eq!(half, half_ascii);
+///
+/// // Round-trips through Display.
+/// assert_eq!(g7.to_string().parse::<Chord>().unwrap(), g7);
+/// assert_eq!(bdim.to_string().parse::<Chord>().unwrap(), bdim);
+/// ```
+impl FromStr for Chord {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(ParseError::new("empty chord"));
+        }
+
+        // Find the longest prefix that parses as a Note. The root is at
+        // most a letter plus a (possibly double) accidental, so we only
+        // need to scan the first few char boundaries.
+        let mut best: Option<(Note, usize)> = None;
+        for (i, _) in s.char_indices().skip(1) {
+            if let Ok(note) = s[..i].parse::<Note>() {
+                best = Some((note, i));
+            }
+        }
+        if let Ok(note) = s.parse::<Note>() {
+            best = Some((note, s.len()));
+        }
+
+        let (root, end) = best.ok_or_else(|| {
+            ParseError::new(format!("no valid root in chord: {s:?}"))
+        })?;
+        let quality: ChordQuality = s[end..].parse()?;
+        Ok(Chord::new(root.pitch_class(), quality))
     }
 }
 
@@ -333,5 +431,85 @@ mod tests {
                 "{q:?} should start on the root"
             );
         }
+    }
+
+    #[test]
+    fn parse_quality_round_trips_for_every_variant() {
+        for q in ChordQuality::ALL {
+            let parsed: ChordQuality = q.symbol().parse().unwrap();
+            assert_eq!(parsed, *q);
+        }
+    }
+
+    #[test]
+    fn parse_chord_handles_basic_symbols() {
+        assert_eq!(
+            "C".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::C, ChordQuality::Major)
+        );
+        assert_eq!(
+            "Cm".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::C, ChordQuality::Minor)
+        );
+        assert_eq!(
+            "G7".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::G, ChordQuality::Dominant7)
+        );
+        assert_eq!(
+            "Cmaj7".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::C, ChordQuality::Major7)
+        );
+    }
+
+    #[test]
+    fn parse_chord_handles_accidental_roots() {
+        // Sharp roots
+        assert_eq!(
+            "F#dim".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::F_SHARP, ChordQuality::Diminished)
+        );
+        assert_eq!(
+            "F♯dim".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::F_SHARP, ChordQuality::Diminished)
+        );
+        // Flat roots
+        assert_eq!(
+            "Bb7".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::A_SHARP, ChordQuality::Dominant7)
+        );
+        assert_eq!(
+            "B♭7".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::A_SHARP, ChordQuality::Dominant7)
+        );
+    }
+
+    #[test]
+    fn parse_chord_handles_half_diminished() {
+        assert_eq!(
+            "Bm7♭5".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::B, ChordQuality::HalfDiminished7)
+        );
+        assert_eq!(
+            "Bm7b5".parse::<Chord>().unwrap(),
+            Chord::new(PitchClass::B, ChordQuality::HalfDiminished7)
+        );
+    }
+
+    #[test]
+    fn parse_chord_round_trips_for_every_pitch_and_quality() {
+        for pc_value in 0..12 {
+            for q in ChordQuality::ALL {
+                let chord = Chord::new(PitchClass::new(pc_value), *q);
+                let parsed: Chord = chord.to_string().parse().unwrap();
+                assert_eq!(parsed, chord);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_chord_rejects_invalid_input() {
+        assert!("".parse::<Chord>().is_err());
+        assert!("Hm".parse::<Chord>().is_err()); // bad letter
+        assert!("Cwhatever".parse::<Chord>().is_err()); // unknown quality
     }
 }

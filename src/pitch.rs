@@ -2,8 +2,11 @@
 
 use std::fmt;
 use std::ops::{Add, Sub};
+use std::str::FromStr;
 
 use crate::interval::Interval;
+use crate::note::Note;
+use crate::parse::ParseError;
 
 /// A pitch class, an integer in `0..12` representing a tone independent of
 /// octave. Index 0 is C, 1 is C♯/D♭, …, 11 is B.
@@ -69,9 +72,42 @@ impl Sub for PitchClass {
     }
 }
 
+/// Pitch class shifted **down** by an interval. Wraps modulo 12.
+impl Sub<Interval> for PitchClass {
+    type Output = PitchClass;
+    fn sub(self, rhs: Interval) -> PitchClass {
+        let total = self.0 as i32 - rhs.semitones() as i32;
+        PitchClass(total.rem_euclid(12) as u8)
+    }
+}
+
 impl fmt::Display for PitchClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.default_name())
+    }
+}
+
+/// Parse a pitch class from a note name, ignoring spelling.
+///
+/// Accepts the same syntax as [`Note::from_str`]; the result is the
+/// pitch class of the named note, so `"C#"`, `"Db"`, `"B##"` (if it
+/// were spelled that way) all map to the same `PitchClass`.
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::PitchClass;
+///
+/// let c_sharp: PitchClass = "C#".parse().unwrap();
+/// let d_flat:  PitchClass = "Db".parse().unwrap();
+/// assert_eq!(c_sharp, d_flat);
+/// assert_eq!(c_sharp, PitchClass::C_SHARP);
+/// ```
+impl FromStr for PitchClass {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let note: Note = s.parse()?;
+        Ok(note.pitch_class())
     }
 }
 
@@ -105,5 +141,47 @@ mod tests {
         assert_eq!(PitchClass::G - PitchClass::C, Interval::PERFECT_FIFTH);
         assert_eq!(PitchClass::C - PitchClass::G, Interval::PERFECT_FOURTH);
         assert_eq!(PitchClass::C - PitchClass::C, Interval::UNISON);
+    }
+
+    #[test]
+    fn subtract_interval_wraps_octave() {
+        // G - P5 = C
+        assert_eq!(PitchClass::G - Interval::PERFECT_FIFTH, PitchClass::C);
+        // C - octave = C
+        assert_eq!(PitchClass::C - Interval::OCTAVE, PitchClass::C);
+        // C - half step wraps to B
+        assert_eq!(PitchClass::C - Interval::MINOR_SECOND, PitchClass::B);
+    }
+
+    #[test]
+    fn add_and_sub_are_inverse() {
+        for v in 0..12 {
+            let pc = PitchClass::new(v);
+            for semitones in 0..24 {
+                let iv = Interval::new(semitones);
+                assert_eq!(pc + iv - iv, pc, "pc {v}, iv {semitones}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_accepts_sharp_and_flat_names() {
+        assert_eq!("C".parse::<PitchClass>().unwrap(), PitchClass::C);
+        assert_eq!("C#".parse::<PitchClass>().unwrap(), PitchClass::C_SHARP);
+        assert_eq!("Db".parse::<PitchClass>().unwrap(), PitchClass::C_SHARP);
+        assert_eq!("F♯".parse::<PitchClass>().unwrap(), PitchClass::F_SHARP);
+        assert_eq!("G♭".parse::<PitchClass>().unwrap(), PitchClass::F_SHARP);
+        // B♯ wraps to C, C♭ wraps to B.
+        assert_eq!("B#".parse::<PitchClass>().unwrap(), PitchClass::C);
+        assert_eq!("Cb".parse::<PitchClass>().unwrap(), PitchClass::B);
+    }
+
+    #[test]
+    fn parse_round_trips_default_names() {
+        for v in 0..12 {
+            let pc = PitchClass::new(v);
+            let parsed: PitchClass = pc.to_string().parse().unwrap();
+            assert_eq!(parsed, pc);
+        }
     }
 }

@@ -7,14 +7,43 @@
 //! design separates abstract theory (pitch classes, intervals, scales,
 //! chords, keys) from any instrument-specific layout (frets, keys, valves).
 //!
+//! ## Quick tour
+//!
+//! ```
+//! use harmonia::{Chord, ChordQuality, Key, PitchClass, Scale, ScaleKind};
+//!
+//! // Pitch-class arithmetic.
+//! let g = PitchClass::G;
+//! let v_chord = Chord::new(g, ChordQuality::Dominant7);
+//! assert_eq!(v_chord.to_string(), "G7");
+//!
+//! // Roman-numeral analysis in a key.
+//! let c_major = Key::new(PitchClass::C);
+//! assert_eq!(c_major.roman_for(v_chord).as_deref(), Some("V7"));
+//!
+//! // Diatonic spelling.
+//! let g_major: Scale = "G Ionian".parse().unwrap();
+//! let spelled = g_major.spelled().unwrap();
+//! let labels: Vec<String> = spelled.iter().map(|n| n.to_string()).collect();
+//! assert_eq!(labels, vec!["G", "A", "B", "C", "D", "E", "F♯"]);
+//!
+//! // Parse chord progressions and analyse them.
+//! let progression: Vec<Chord> = ["C", "Am", "F", "G7"]
+//!     .iter()
+//!     .map(|s| s.parse().unwrap())
+//!     .collect();
+//! let detected = harmonia::detect_key(&progression);
+//! assert_eq!(detected[0].key, Key::new(PitchClass::C));
+//! ```
+//!
 //! ## Foundation layer
 //!
 //! - [`PitchClass`] — one of the twelve octave-equivalent tones (`0..12`).
 //! - [`Interval`] — a non-negative number of semitones, with named constants.
 //! - [`Note`] — a [`Letter`] plus an [`Accidental`]; carries enharmonic
 //!   spelling on top of a pitch class.
-//! - [`spell_heptatonic`](spelling::spell_heptatonic) — assigns natural
-//!   letters A–G across a seven-note scale so each appears exactly once.
+//! - [`spell_heptatonic`] — assigns natural letters A–G across a seven-
+//!   note scale so each appears exactly once.
 //!
 //! ## Catalogue
 //!
@@ -28,19 +57,20 @@
 //!
 //! - [`Key`] — a (currently always major) key. Provides diatonic chord
 //!   templates and Roman-numeral labels via [`Key::roman_for`].
-//! - [`detect_key`](analysis::detect_key) — score a chord progression
-//!   against every major key, returning candidates ranked by fit.
-//! - [`suggest_scales_for_bracket`](analysis::suggest_scales_for_bracket)
-//!   — rank scales that fit a lead-line gap between two chords.
-//! - [`suggest_next_chords`](analysis::suggest_next_chords) — context-
-//!   aware chord recommender with diatonic, resolution, borrowed,
-//!   secondary, relative, and chromatic categories.
+//! - [`detect_key`] — score a chord progression against every major key,
+//!   returning candidates ranked by fit.
+//! - [`suggest_scales_for_bracket`] — rank scales that fit a lead-line
+//!   gap between two chords.
+//! - [`suggest_next_chords`] — context-aware chord recommender with
+//!   diatonic, resolution, borrowed, secondary, relative, and chromatic
+//!   categories.
 
 pub mod analysis;
 pub mod chord;
 pub mod interval;
 pub mod key;
 pub mod note;
+pub mod parse;
 pub mod pitch;
 pub mod scale;
 pub mod spelling;
@@ -53,6 +83,7 @@ pub use chord::{Chord, ChordQuality};
 pub use interval::Interval;
 pub use key::{DiatonicChord, Key};
 pub use note::{Accidental, Letter, Note};
+pub use parse::ParseError;
 pub use pitch::PitchClass;
 pub use scale::{Scale, ScaleGroup, ScaleKind};
 pub use spelling::spell_heptatonic;

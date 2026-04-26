@@ -2,9 +2,11 @@
 //! working with concrete pitch-class sets.
 
 use std::fmt;
+use std::str::FromStr;
 
 use crate::interval::Interval;
 use crate::note::Note;
+use crate::parse::ParseError;
 use crate::pitch::PitchClass;
 use crate::spelling::spell_heptatonic;
 
@@ -347,6 +349,50 @@ impl fmt::Display for ScaleKind {
     }
 }
 
+/// Parse a [`ScaleKind`] by name. Accepts the canonical [`ScaleKind::name`]
+/// form (`"Ionian (major)"`, `"Diminished (W-H)"`) and the short variant
+/// (`"Ionian"`, `"Aeolian"`).
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::ScaleKind;
+///
+/// assert_eq!("Ionian".parse::<ScaleKind>().unwrap(), ScaleKind::Ionian);
+/// assert_eq!("Ionian (major)".parse::<ScaleKind>().unwrap(), ScaleKind::Ionian);
+/// assert_eq!("Harmonic Minor".parse::<ScaleKind>().unwrap(), ScaleKind::HarmonicMinor);
+/// assert_eq!("Diminished (W-H)".parse::<ScaleKind>().unwrap(), ScaleKind::DiminishedWholeHalf);
+/// ```
+impl FromStr for ScaleKind {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Ionian" | "Ionian (major)" => ScaleKind::Ionian,
+            "Dorian" => ScaleKind::Dorian,
+            "Phrygian" => ScaleKind::Phrygian,
+            "Lydian" => ScaleKind::Lydian,
+            "Mixolydian" => ScaleKind::Mixolydian,
+            "Aeolian" | "Aeolian (minor)" => ScaleKind::Aeolian,
+            "Locrian" => ScaleKind::Locrian,
+            "Major Pentatonic" => ScaleKind::MajorPentatonic,
+            "Minor Pentatonic" => ScaleKind::MinorPentatonic,
+            "Blues" => ScaleKind::Blues,
+            "Harmonic Minor" => ScaleKind::HarmonicMinor,
+            "Melodic Minor" => ScaleKind::MelodicMinor,
+            "Whole Tone" => ScaleKind::WholeTone,
+            "Diminished (W-H)" => ScaleKind::DiminishedWholeHalf,
+            "Diminished (H-W)" => ScaleKind::DiminishedHalfWhole,
+            "Chromatic" => ScaleKind::Chromatic,
+            other => {
+                return Err(ParseError::new(format!(
+                    "unknown scale kind: {other:?}"
+                )))
+            }
+        })
+    }
+}
+
 impl ScaleGroup {
     pub const ALL: &'static [ScaleGroup] = &[
         ScaleGroup::Modes,
@@ -442,6 +488,33 @@ impl Scale {
 impl fmt::Display for Scale {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} {}", self.root, self.kind)
+    }
+}
+
+/// Parse a scale from `"<root> <kind>"`, splitting on the first space.
+/// The kind may contain spaces (`"Major Pentatonic"`, `"Diminished (W-H)"`).
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{PitchClass, Scale, ScaleKind};
+///
+/// let g_major: Scale = "G Ionian".parse().unwrap();
+/// assert_eq!(g_major, Scale::new(PitchClass::G, ScaleKind::Ionian));
+///
+/// let pent: Scale = "C Major Pentatonic".parse().unwrap();
+/// assert_eq!(pent.kind, ScaleKind::MajorPentatonic);
+/// ```
+impl FromStr for Scale {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (root_str, kind_str) = s
+            .split_once(' ')
+            .ok_or_else(|| ParseError::new(format!("scale missing kind: {s:?}")))?;
+        let root: PitchClass = root_str.parse()?;
+        let kind: ScaleKind = kind_str.parse()?;
+        Ok(Scale::new(root, kind))
     }
 }
 
@@ -598,5 +671,47 @@ mod tests {
     fn display_combines_root_and_name() {
         let scale = Scale::new(PitchClass::F_SHARP, ScaleKind::Lydian);
         assert_eq!(scale.to_string(), "F♯ Lydian");
+    }
+
+    #[test]
+    fn parse_kind_round_trips_via_display() {
+        for kind in ScaleKind::ALL {
+            let parsed: ScaleKind = kind.to_string().parse().unwrap();
+            assert_eq!(parsed, *kind);
+        }
+    }
+
+    #[test]
+    fn parse_kind_accepts_short_forms_for_modes() {
+        assert_eq!("Ionian".parse::<ScaleKind>().unwrap(), ScaleKind::Ionian);
+        assert_eq!("Aeolian".parse::<ScaleKind>().unwrap(), ScaleKind::Aeolian);
+    }
+
+    #[test]
+    fn parse_scale_round_trips_via_display() {
+        for kind in ScaleKind::ALL {
+            for pc_value in 0..12 {
+                let scale = Scale::new(PitchClass::new(pc_value), *kind);
+                let parsed: Scale = scale.to_string().parse().unwrap();
+                assert_eq!(parsed, scale);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_scale_handles_multi_word_kinds() {
+        let s: Scale = "C Major Pentatonic".parse().unwrap();
+        assert_eq!(s.kind, ScaleKind::MajorPentatonic);
+        let d: Scale = "F♯ Diminished (W-H)".parse().unwrap();
+        assert_eq!(d.root, PitchClass::F_SHARP);
+        assert_eq!(d.kind, ScaleKind::DiminishedWholeHalf);
+    }
+
+    #[test]
+    fn parse_scale_rejects_malformed_input() {
+        assert!("".parse::<Scale>().is_err());
+        assert!("Cmajor".parse::<Scale>().is_err()); // no space
+        assert!("C Banana".parse::<Scale>().is_err()); // unknown kind
+        assert!("H Ionian".parse::<Scale>().is_err()); // bad root letter
     }
 }

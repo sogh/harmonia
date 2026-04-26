@@ -1,7 +1,9 @@
 //! Named notes: a letter A–G plus an accidental.
 
 use std::fmt;
+use std::str::FromStr;
 
+use crate::parse::ParseError;
 use crate::pitch::PitchClass;
 
 /// One of the seven natural letters used to name notes.
@@ -132,6 +134,61 @@ impl fmt::Display for Note {
     }
 }
 
+/// Parse a note like `"C"`, `"F#"`, `"Bb"`, `"C♯"`, `"E𝄫"`.
+///
+/// Letter is a single uppercase character A–G. Accidental is one of:
+/// `""` (natural), `"#"`/`"♯"`, `"b"`/`"♭"`, `"x"`/`"𝄪"`, or
+/// `"bb"`/`"♭♭"`/`"𝄫"`.
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{Accidental, Letter, Note};
+///
+/// let f_sharp: Note = "F#".parse().unwrap();
+/// assert_eq!(f_sharp, Note::new(Letter::F, Accidental::Sharp));
+///
+/// // Round-trips through Display.
+/// let n = Note::new(Letter::B, Accidental::Flat);
+/// assert_eq!(n.to_string().parse::<Note>().unwrap(), n);
+/// ```
+impl FromStr for Note {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        let letter = match chars.next() {
+            Some('C') => Letter::C,
+            Some('D') => Letter::D,
+            Some('E') => Letter::E,
+            Some('F') => Letter::F,
+            Some('G') => Letter::G,
+            Some('A') => Letter::A,
+            Some('B') => Letter::B,
+            Some(c) => {
+                return Err(ParseError::new(format!(
+                    "invalid note letter: {c:?}"
+                )))
+            }
+            None => return Err(ParseError::new("empty note name")),
+        };
+        let rest = chars.as_str();
+        let accidental = match rest {
+            "" => Accidental::Natural,
+            "#" | "♯" => Accidental::Sharp,
+            "b" | "♭" => Accidental::Flat,
+            "x" | "𝄪" => Accidental::DoubleSharp,
+            "bb" | "♭♭" | "𝄫" => Accidental::DoubleFlat,
+            other => {
+                return Err(ParseError::new(format!(
+                    "invalid accidental: {other:?}"
+                )))
+            }
+        };
+        Ok(Note::new(letter, accidental))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +236,62 @@ mod tests {
             Note::new(Letter::E, Accidental::DoubleFlat).to_string(),
             "E𝄫"
         );
+    }
+
+    #[test]
+    fn parse_naturals() {
+        for letter in [Letter::C, Letter::D, Letter::E, Letter::F, Letter::G, Letter::A, Letter::B] {
+            let s = letter.to_string();
+            let parsed: Note = s.parse().unwrap();
+            assert_eq!(parsed, Note::natural(letter));
+        }
+    }
+
+    #[test]
+    fn parse_accepts_ascii_and_unicode_accidentals() {
+        let f_sharp = Note::new(Letter::F, Accidental::Sharp);
+        assert_eq!("F#".parse::<Note>().unwrap(), f_sharp);
+        assert_eq!("F♯".parse::<Note>().unwrap(), f_sharp);
+
+        let b_flat = Note::new(Letter::B, Accidental::Flat);
+        assert_eq!("Bb".parse::<Note>().unwrap(), b_flat);
+        assert_eq!("B♭".parse::<Note>().unwrap(), b_flat);
+
+        let e_dflat = Note::new(Letter::E, Accidental::DoubleFlat);
+        assert_eq!("Ebb".parse::<Note>().unwrap(), e_dflat);
+        assert_eq!("E♭♭".parse::<Note>().unwrap(), e_dflat);
+        assert_eq!("E𝄫".parse::<Note>().unwrap(), e_dflat);
+
+        let g_dsharp = Note::new(Letter::G, Accidental::DoubleSharp);
+        assert_eq!("Gx".parse::<Note>().unwrap(), g_dsharp);
+        assert_eq!("G𝄪".parse::<Note>().unwrap(), g_dsharp);
+    }
+
+    #[test]
+    fn parse_round_trips_for_every_letter_accidental_pair() {
+        let letters = [Letter::C, Letter::D, Letter::E, Letter::F, Letter::G, Letter::A, Letter::B];
+        let accidentals = [
+            Accidental::DoubleFlat,
+            Accidental::Flat,
+            Accidental::Natural,
+            Accidental::Sharp,
+            Accidental::DoubleSharp,
+        ];
+        for letter in letters {
+            for accidental in accidentals {
+                let note = Note::new(letter, accidental);
+                let parsed: Note = note.to_string().parse().unwrap();
+                assert_eq!(parsed, note);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_rejects_invalid_inputs() {
+        assert!("".parse::<Note>().is_err());
+        assert!("H".parse::<Note>().is_err());
+        assert!("c".parse::<Note>().is_err()); // lowercase letter
+        assert!("C?".parse::<Note>().is_err()); // bogus accidental
+        assert!("C#x".parse::<Note>().is_err()); // multi-accidental mix
     }
 }

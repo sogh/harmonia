@@ -47,6 +47,21 @@ impl KeyMatch {
 /// results[1].matched`) as ambiguous.
 ///
 /// Ports `detectKey` from `theory.js`.
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{detect_key, Chord, Key, PitchClass};
+///
+/// // I – ii – V7 – I in C major.
+/// let progression: Vec<Chord> = ["C", "Dm", "G7", "C"]
+///     .iter().map(|s| s.parse().unwrap()).collect();
+/// let results = detect_key(&progression);
+///
+/// assert_eq!(results[0].key, Key::new(PitchClass::C));
+/// assert_eq!(results[0].matched, 4);
+/// assert_eq!(results[0].ratio(), 1.0);
+/// ```
 pub fn detect_key(chords: &[Chord]) -> Vec<KeyMatch> {
     if chords.is_empty() {
         return Vec::new();
@@ -241,6 +256,25 @@ impl fmt::Display for SuggestionCategory {
     }
 }
 
+impl std::str::FromStr for SuggestionCategory {
+    type Err = crate::parse::ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "diatonic" => SuggestionCategory::Diatonic,
+            "resolution" => SuggestionCategory::Resolution,
+            "borrowed" => SuggestionCategory::Borrowed,
+            "secondary" => SuggestionCategory::Secondary,
+            "relative" => SuggestionCategory::Relative,
+            "chromatic" => SuggestionCategory::Chromatic,
+            other => {
+                return Err(crate::parse::ParseError::new(format!(
+                    "unknown suggestion category: {other:?}"
+                )))
+            }
+        })
+    }
+}
+
 /// One suggestion from [`suggest_next_chords`].
 #[derive(Clone, Debug)]
 pub struct ChordSuggestion {
@@ -368,13 +402,31 @@ impl<'a> Builder<'a> {
 /// (optionally) a chord at the cursor that should be excluded from
 /// suggestions.
 ///
-/// Generates up to [`MAX_SUGGESTIONS`] candidates across six categories:
+/// Generates up to 30 candidates across six categories:
 /// diatonic, resolution moves, borrowed chords, secondary dominants,
 /// relative major/minor, and chromatic motion. Each suggestion is
 /// deduplicated by (root, quality) — earlier categories win, so a chord
 /// that is both diatonic and a resolution move shows up as diatonic.
 ///
 /// Ports `suggestNextChords` from `theory.js`.
+///
+/// # Examples
+///
+/// ```
+/// use harmonia::{suggest_next_chords, Chord};
+///
+/// let history: Vec<Chord> = ["C", "Am", "F"]
+///     .iter().map(|s| s.parse().unwrap()).collect();
+/// let result = suggest_next_chords(&history, None);
+///
+/// // The progression establishes C major.
+/// let key = result.key.expect("key detected");
+/// assert_eq!(key.key.tonic, harmonia::PitchClass::C);
+///
+/// // G7 (V7) should be among the suggestions.
+/// let g7: Chord = "G7".parse().unwrap();
+/// assert!(result.suggestions.iter().any(|s| s.chord == g7));
+/// ```
 pub fn suggest_next_chords(
     prior_chords: &[Chord],
     current: Option<Chord>,
@@ -1049,5 +1101,21 @@ mod tests {
         assert_eq!(SuggestionCategory::Secondary.to_string(), "secondary");
         assert_eq!(SuggestionCategory::Relative.to_string(), "relative");
         assert_eq!(SuggestionCategory::Chromatic.to_string(), "chromatic");
+    }
+
+    #[test]
+    fn category_parse_round_trips() {
+        for c in [
+            SuggestionCategory::Diatonic,
+            SuggestionCategory::Resolution,
+            SuggestionCategory::Borrowed,
+            SuggestionCategory::Secondary,
+            SuggestionCategory::Relative,
+            SuggestionCategory::Chromatic,
+        ] {
+            let parsed: SuggestionCategory = c.to_string().parse().unwrap();
+            assert_eq!(parsed, c);
+        }
+        assert!("nope".parse::<SuggestionCategory>().is_err());
     }
 }

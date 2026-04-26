@@ -109,6 +109,28 @@ impl Key {
     /// non-diatonic dominant 7ths sitting on a major degree as `<roman>7`
     /// (e.g. C7 in C major → `"I7"`) and minor 7ths on a minor degree
     /// likewise. Returns `None` when no plausible label exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use harmonia::{Chord, Key, PitchClass};
+    ///
+    /// let c_major = Key::new(PitchClass::C);
+    ///
+    /// // Diatonic chords get exact Roman labels.
+    /// let g: Chord = "G".parse().unwrap();
+    /// let g7: Chord = "G7".parse().unwrap();
+    /// assert_eq!(c_major.roman_for(g).as_deref(),  Some("V"));
+    /// assert_eq!(c_major.roman_for(g7).as_deref(), Some("V7"));
+    ///
+    /// // Non-diatonic dom7 on a major degree gets the fuzzy label.
+    /// let c7: Chord = "C7".parse().unwrap();
+    /// assert_eq!(c_major.roman_for(c7).as_deref(), Some("I7"));
+    ///
+    /// // Truly out-of-key chords return None.
+    /// let f_sharp: Chord = "F#".parse().unwrap();
+    /// assert!(c_major.roman_for(f_sharp).is_none());
+    /// ```
     pub fn roman_for(self, chord: Chord) -> Option<String> {
         let interval = chord.root - self.tonic;
 
